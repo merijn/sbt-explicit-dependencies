@@ -1,0 +1,6 @@
+# scalaz is declared in core but used by neither core nor tools, so it must be
+# flagged as unused both per-project and in the aggregate check.
+-> core/unusedCompileDependenciesTest
+> tools/unusedCompileDependenciesTest
+-> unusedCompileDependenciesAggregateTest
+> check

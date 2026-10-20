@@ -1,0 +1,3 @@
+object MainTest {
+  println("testing")
+}

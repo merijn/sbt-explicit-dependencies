@@ -7,6 +7,12 @@ import sbt.util.Logger
 
 object Logic {
 
+  // Libraries that are implicitly present on the classpath (scala-library, scalajs-library,
+  // scala3-library) or only ever used reflectively (scalajs-test-bridge, added to the Test
+  // config automatically by ScalaJSPlugin), so they should never be reported as unused/undeclared.
+  private val implicitlyPresentLibraries =
+    Set("scala-library", "scalajs-library", "scala3-library", "scalajs-test-bridge")
+
   def getUndeclaredCompileDependencies(
     projectName: String,
     allLibraryDeps: Set[File],
@@ -115,9 +121,7 @@ object Logic {
   ): (Set[Dependency], Set[Dependency]) = {
     def filterScalaLibsAndMapDependency(libraryDependencies: Seq[ModuleID]): Seq[Dependency] = {
       val compileConfigLibraryDependencies = libraryDependencies
-        .filterNot(_.name == "scala-library")
-        .filterNot(_.name == "scalajs-library")
-        .filterNot(_.name == "scala3-library")
+        .filterNot(dep => implicitlyPresentLibraries.contains(dep.name))
 
       val declaredCompileDependencies = compileConfigLibraryDependencies
         .map{moduleId =>

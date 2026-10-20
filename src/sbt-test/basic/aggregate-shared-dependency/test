@@ -1,0 +1,7 @@
+# cats-core is declared in both core and tools, but tools' code doesn't use it directly.
+# Per-project checking flags it as unused in tools...
+-> tools/unusedCompileDependenciesTest
+> core/unusedCompileDependenciesTest
+# ...but the aggregate check considers it used, since core depends on it.
+> unusedCompileDependenciesAggregateTest
+> check
