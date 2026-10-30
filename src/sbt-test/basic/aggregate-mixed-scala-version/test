@@ -1,0 +1,9 @@
+# core (Scala 3) and tools (Scala 2.13) each declare and use all their dependencies, so
+# per-project checks pass on their own.
+> core/unusedCompileDependenciesTest
+> tools/unusedCompileDependenciesTest
+# The aggregate task must not borrow a single subproject's Scala version to make sense of
+# every subproject's jars: core's shapeless3-typeable_3 jar has to be recognised as the
+# declared "shapeless3-typeable" dependency even though root/ThisBuild is on Scala 2.13.
+> unusedCompileDependenciesAggregateTest
+> check

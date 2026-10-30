@@ -63,43 +63,23 @@ object ExplicitDepsPlugin extends AutoPlugin {
     val csrCacheDirectoryOpt = csrCacheDirectory.?.value.map(_.getAbsolutePath)
     val baseDir = baseDirectory.value.getAbsolutePath
 
-    val usedCompileDeps: Set[File] = getAllLibraryDeps(compileAnalysis, log)(csrCacheDirectoryOpt, baseDir)
-    val usedTestDeps: Set[File] = getAllLibraryDeps(testAnalysis, log)(csrCacheDirectoryOpt, baseDir)
-    val declaredDeps: Seq[ModuleID] = libraryDependencies.value
-
-    log.debug(s"[${name.value}] Found ${(usedCompileDeps ++ usedTestDeps).size} used jars and ${declaredDeps.size} declared modules.")
-
-    (usedCompileDeps, usedTestDeps, declaredDeps)
+    Logic.collectProjectDependencies(
+      getAllLibraryDeps(compileAnalysis, log)(csrCacheDirectoryOpt, baseDir),
+      getAllLibraryDeps(testAnalysis, log)(csrCacheDirectoryOpt, baseDir),
+      libraryDependencies.value,
+      ScalaVersion(scalaBinaryVersion.value, scalaVersion.value),
+      log
+    )
   }
 
   private lazy val collectLibraryDepsAllTask = Def.task {
     val log = streams.value.log
 
-    val projectResults: Seq[(Set[File], Set[File], Seq[ModuleID])] = collectLibraryDepsProjectTask.all(
+    val projectResults: Seq[ProjectDependencies] = collectLibraryDepsProjectTask.all(
       ScopeFilter(inAnyProject, inAnyConfiguration)
     ).value
 
-    val (allUsedCompileDeps, allUsedTestDeps, allDeclaredDeps) = projectResults.unzip3
-
-    val mergedUsedCompileDeps = allUsedCompileDeps.flatten.toSet
-    val mergedUsedTestDeps = allUsedTestDeps.flatten.toSet
-    val mergedDeclaredDeps = allDeclaredDeps.flatten.toSet
-
-    log.debug(s"Aggregated ${(mergedUsedCompileDeps ++ mergedUsedTestDeps).size} unique used jars and ${mergedDeclaredDeps.size} unique declared modules across all projects.")
-    log.debug("Aggregated Used Compile Dependencies:")
-    mergedUsedCompileDeps.toSeq.sorted.foreach(dep => log.debug(s"  - ${dep.getName}"))
-    log.debug("Aggregated Used Test Dependencies:")
-    mergedUsedTestDeps.toSeq.sorted.foreach(dep => log.debug(s"  - ${dep.getName}"))
-
-    log.debug("Aggregated Declared Dependencies:")
-    val namePadding = mergedDeclaredDeps.map(_.name.length).max + 3
-    mergedDeclaredDeps
-      .toSeq.sorted(Ordering.by[ModuleID, String](_.name))
-      .foreach { dep =>
-        val paddedName = dep.name.padTo(namePadding, ' ')
-        log.debug(s"  - $paddedName${dep.organization} % ${dep.name} % ${dep.revision}")
-      }
-    (mergedUsedCompileDeps, mergedUsedTestDeps, mergedDeclaredDeps.toSeq)
+    Logic.mergeProjectDependencies(projectResults, log)
   }
 
   lazy val undeclaredCompileDependenciesTask = Def.task {
@@ -161,20 +141,10 @@ object ExplicitDepsPlugin extends AutoPlugin {
   lazy val unusedCompileDependenciesAggregateTask = Def.task {
     val log = streams.value.log
     val projectName = name.value
-    val (usedCompileDeps, usedTestDeps, declaredDeps) = collectLibraryDepsAllTask.value
-    val scalaBinaryVer = scalaBinaryVersion.value
-    val scalaFullVer = scalaVersion.value
+    val projectDependencies = collectLibraryDepsAllTask.value
     val filter = unusedCompileDependenciesFilter.value
 
-    Logic.getUnusedCompileDependencies(
-      projectName,
-      usedCompileDeps,
-      usedTestDeps,
-      declaredDeps,
-      ScalaVersion(scalaBinaryVer, scalaFullVer),
-      filter,
-      log
-    )
+    Logic.reportUnusedCompileDependencies(projectName, projectDependencies, filter, log)
   }
 
   lazy val unusedCompileDependenciesAggregateTestTask = Def.task {

@@ -2,7 +2,7 @@ package explicitdeps
 
 import java.io.File
 
-import sbt.librarymanagement.ModuleID
+import sbt.librarymanagement.{For2_13Use3, For3Use2_13, ModuleID}
 import sbt.util.Logger
 
 object Logic {
@@ -49,6 +49,20 @@ object Logic {
     moduleFilter: ModuleFilter,
     log: Logger
   ): Set[Dependency] = {
+    val projectDependencies = collectProjectDependencies(allLibraryCompileDeps, allLibraryTestDeps, libraryDeps, scalaVersion, log)
+    reportUnusedCompileDependencies(projectName, projectDependencies, moduleFilter, log)
+  }
+
+  // Each subproject may be on a different Scala version (e.g. a for3Use2_13/for2_13Use3
+  // cross-build), so jars and declared modules are converted to Dependency using the
+  // subproject's own ScalaVersion here, before results of multiple subprojects are merged.
+  def collectProjectDependencies(
+    allLibraryCompileDeps: Set[File],
+    allLibraryTestDeps: Set[File],
+    libraryDeps: Seq[ModuleID],
+    scalaVersion: ScalaVersion,
+    log: Logger
+  ): ProjectDependencies = {
     val compileDependencies = {
       log.debug("Checking Compile Dependencies")
       getCompileDependencies(allLibraryCompileDeps, scalaVersion, log)
@@ -58,6 +72,34 @@ object Logic {
       getCompileDependencies(allLibraryTestDeps, scalaVersion, log)
     }
     val (declaredCompileDependencies, declaredTestDependencies) = getDeclaredCompileDependencies(libraryDeps, scalaVersion, log)
+
+    ProjectDependencies(compileDependencies, compileTestDependencies, declaredCompileDependencies, declaredTestDependencies)
+  }
+
+  def mergeProjectDependencies(projects: Seq[ProjectDependencies], log: Logger): ProjectDependencies = {
+    val merged = ProjectDependencies.merge(projects)
+
+    log.debug(s"Aggregated ${merged.used.size} unique used dependencies and ${merged.declared.size} unique declared dependencies across all projects.")
+    def logSorted(title: String, deps: Set[Dependency]): Unit = {
+      log.debug(title)
+      deps.toSeq.sortBy(_.name).foreach(dep => log.debug(s"  - $dep"))
+    }
+    logSorted("Aggregated Used Compile Dependencies:", merged.usedCompile)
+    logSorted("Aggregated Used Test Dependencies:", merged.usedTest)
+    logSorted("Aggregated Declared Compile Dependencies:", merged.declaredCompile)
+    logSorted("Aggregated Declared Test Dependencies:", merged.declaredTest)
+
+    merged
+  }
+
+  def reportUnusedCompileDependencies(
+    projectName: String,
+    projectDependencies: ProjectDependencies,
+    moduleFilter: ModuleFilter,
+    log: Logger
+  ): Set[Dependency] = {
+    val ProjectDependencies(compileDependencies, compileTestDependencies, declaredCompileDependencies, declaredTestDependencies) =
+      projectDependencies
 
     val unusedCompileDependencies =
       (declaredCompileDependencies diff compileDependencies)
@@ -105,8 +147,6 @@ object Logic {
         .filterNot(_.getName matches "scalajs-library.*\\.jar")
         .filterNot(_.getName matches "scala3-library.*\\.jar")
 
-
-
     val compileDependencies = compileDependencyJarFiles
       .flatMap(BoringStuff.jarFileToDependency(scalaVersion, log))
     log.debug(s"Compile depends on:\n${compileDependencies.mkString("  ", "\n  ", "")}")
@@ -125,8 +165,13 @@ object Logic {
 
       val declaredCompileDependencies = compileConfigLibraryDependencies
         .map{moduleId =>
-          val isCross = moduleId.crossVersion.isInstanceOf[Binary] ||  moduleId.crossVersion.isInstanceOf[Full]
-          Dependency(moduleId.organization, moduleId.name, moduleId.revision, isCross)
+          val (isCross, suffix) = moduleId.crossVersion match {
+            case _: For3Use2_13 if scalaVersion.binary == "3" => (false, "_2.13")
+            case _: For2_13Use3 if scalaVersion.binary == "2.13" => (false, "_3")
+            case _: Binary | _: Full | _: For3Use2_13 | _: For2_13Use3 => (true, "")
+            case _ => (false, "")
+          }
+          Dependency(moduleId.organization, moduleId.name + suffix, moduleId.revision, isCross)
         }
       declaredCompileDependencies
     }
