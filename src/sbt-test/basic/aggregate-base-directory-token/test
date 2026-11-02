@@ -1,0 +1,8 @@
+# mylib lives under the build root, and is declared and used in the non-root subproject core.
+# Verify that sbt 1.4+ actually records the jar using the ${BASE} token.
+> core/checkBaseToken
+# Per-project checking resolves the ${BASE} token against the build root, so it sees the dependency as used...
+> core/unusedCompileDependenciesTest
+# ...and the aggregate check has to do the same, rather than resolving ${BASE} against core's own directory.
+> unusedCompileDependenciesAggregateTest
+> check
