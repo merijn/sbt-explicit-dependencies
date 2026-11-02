@@ -87,7 +87,8 @@ object ExplicitDepsPlugin extends AutoPlugin {
     val testAnalysis = (Test / compile).value.asInstanceOf[Analysis]
 
     val csrCacheDirectoryOpt = csrCacheDirectory.?.value.map(_.getAbsolutePath)
-    val baseDir = baseDirectory.value.getAbsolutePath
+    // ${BASE} in sbt's virtual file ids refers to the build root, not to this subproject's directory
+    val baseDir = appConfiguration.value.baseDirectory().getCanonicalFile.toPath.toString
 
     Logic.collectProjectDependencies(
       getAllLibraryDeps(compileAnalysis, log)(csrCacheDirectoryOpt, baseDir),
