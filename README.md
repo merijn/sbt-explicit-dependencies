@@ -113,6 +113,21 @@ Some libraries need to be added to the runtime classpath, but aren't required fo
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3" % Runtime
 ```
 
+#### Dependencies in the wrong scope
+
+The configuration of a dependency is part of the dependency itself (`% Test`, `% Runtime`, ...). Setting
+`libraryDependencies` in a configuration or task scope, such as `Test / libraryDependencies += ...`, has no
+effect: sbt ignores it and the library ends up on no classpath. `unusedCompileDependenciesTest`,
+`undeclaredCompileDependenciesTest` and `unusedCompileDependenciesAggregateTest` warn about the affected scopes and
+fail the build for as long as there are any.
+
+If you really do set `libraryDependencies` in such a scope on purpose (for example because a plugin of yours reads
+it), you can keep the warning but stop these tasks from failing:
+
+```scala
+strictDependencyScopes := false
+```
+
 ### Filtering the results
 
 If the result of either `undeclaredCompileDependencies` or

@@ -1,0 +1,6 @@
+# scalaz is the only genuinely unused dependency, so both the per-project and the aggregate check fail on it.
+# The '% Test' dependency (used) and the Test-scoped libraryDependencies setting (ignored by sbt) must not
+# change that, and both checks must give the same answer.
+-> core/unusedCompileDependenciesTest
+-> unusedCompileDependenciesAggregateTest
+> check

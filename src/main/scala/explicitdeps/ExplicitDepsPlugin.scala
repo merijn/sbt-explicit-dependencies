@@ -22,6 +22,8 @@ object ExplicitDepsPlugin extends AutoPlugin {
     val unusedCompileDependenciesTest = taskKey[Unit]("fail the build if there are any libraries declared in libraryDependencies that this project's code does not actually depend on for compilation")
     val unusedCompileDependenciesAggregateTest = taskKey[Unit]("fail the build if there are any libraries declared in libraryDependencies that this project's code does not actually depend on for compilation, aggregated for all subprojects")
     val unusedCompileDependenciesFilter = settingKey[ModuleFilter]("Filter to specify the undeclared dependencies that you care about")
+
+    val strictDependencyScopes = settingKey[Boolean]("fail the *Test tasks if libraryDependencies is set in a configuration or task scope, where sbt ignores it (default: true)")
   }
   import autoImport._
 
@@ -38,6 +40,8 @@ object ExplicitDepsPlugin extends AutoPlugin {
     unusedCompileDependenciesAggregateTest := unusedCompileDependenciesAggregateTestTask.value,
     unusedCompileDependenciesFilter := defaultModuleFilter,
 
+    strictDependencyScopes := true,
+
     unusedCompileDependenciesAggregate / aggregate := false,
     unusedCompileDependenciesAggregateTest / aggregate := false
   )
@@ -52,6 +56,28 @@ object ExplicitDepsPlugin extends AutoPlugin {
         Some(csrCacheDirectoryValue)
       case _ => None
     }
+  }
+
+  // sbt only reads libraryDependencies at project level, the configuration of a dependency is part of its
+  // ModuleID (e.g. `"org" %% "name" % "1.0" % Test`). Setting `Test / libraryDependencies` therefore has no
+  // effect on any classpath, which is almost certainly not what the build author intended.
+  // Warns about such scopes and returns the ones that should fail the build, which is none when the build opted out.
+  private lazy val reportInvalidDependencyScopesTask = Def.task {
+    val log = streams.value.log
+    val projectRef = thisProjectRef.value
+    val structure = Project.extract(state.value).structure
+
+    val scopes = structure.data.data.collect {
+      case (scope, attributes)
+          if scope.project == Select(projectRef) &&
+            (scope.config != Zero || scope.task != Zero) &&
+            attributes.contains(libraryDependencies.key) =>
+        (scope.config.toOption.map(_.name).toList ++ scope.task.toOption.map(_.label).toList :+ libraryDependencies.key.label)
+          .mkString(" / ")
+    }.toSet
+
+    Logic.warnAboutInvalidDependencyScopes(name.value, scopes, log)
+    if (strictDependencyScopes.value) scopes else Set.empty[String]
   }
 
   private lazy val collectLibraryDepsProjectTask = Def.task {
@@ -76,7 +102,7 @@ object ExplicitDepsPlugin extends AutoPlugin {
     val log = streams.value.log
 
     val projectResults: Seq[ProjectDependencies] = collectLibraryDepsProjectTask.all(
-      ScopeFilter(inAnyProject, inAnyConfiguration)
+      ScopeFilter(inAnyProject)
     ).value
 
     Logic.mergeProjectDependencies(projectResults, log)
@@ -105,8 +131,11 @@ object ExplicitDepsPlugin extends AutoPlugin {
 
   lazy val undeclaredCompileDependenciesTestTask = Def.task {
     val undeclaredCompileDeps = undeclaredCompileDependencies.value
+    val invalidScopes = reportInvalidDependencyScopesTask.value
     if (undeclaredCompileDeps.nonEmpty)
       throw UndeclaredCompileDependenciesException
+    if (invalidScopes.nonEmpty)
+      throw InvalidDependencyScopesException
   }
 
   lazy val unusedCompileDependenciesTask = Def.task {
@@ -134,8 +163,11 @@ object ExplicitDepsPlugin extends AutoPlugin {
 
   lazy val unusedCompileDependenciesTestTask = Def.task {
     val unusedCompileDeps = unusedCompileDependencies.value
+    val invalidScopes = reportInvalidDependencyScopesTask.value
     if (unusedCompileDeps.nonEmpty)
       throw UnusedCompileDependenciesException
+    if (invalidScopes.nonEmpty)
+      throw InvalidDependencyScopesException
   }
 
   lazy val unusedCompileDependenciesAggregateTask = Def.task {
@@ -149,7 +181,10 @@ object ExplicitDepsPlugin extends AutoPlugin {
 
   lazy val unusedCompileDependenciesAggregateTestTask = Def.task {
     val unusedCompileDeps = unusedCompileDependenciesAggregate.value
+    val invalidScopes = reportInvalidDependencyScopesTask.all(ScopeFilter(inAnyProject)).value.flatten
     if (unusedCompileDeps.nonEmpty)
       throw UnusedCompileDependenciesException
+    if (invalidScopes.nonEmpty)
+      throw InvalidDependencyScopesException
   }
 }

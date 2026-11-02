@@ -92,6 +92,15 @@ object Logic {
     merged
   }
 
+  def warnAboutInvalidDependencyScopes(projectName: String, scopes: Set[String], log: Logger): Unit =
+    if (scopes.nonEmpty) {
+      log.warn(
+        s"""$projectName >>> libraryDependencies is set in the following scopes, where sbt ignores it:
+           | - ${scopes.toList.sorted.mkString("\n - ")}
+           |To add a dependency to a specific configuration, set it on the dependency itself, e.g.
+           |libraryDependencies += "org" %% "name" % "1.0" % Test""".stripMargin)
+    }
+
   def reportUnusedCompileDependencies(
     projectName: String,
     projectDependencies: ProjectDependencies,

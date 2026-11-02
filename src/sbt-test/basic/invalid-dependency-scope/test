@@ -1,0 +1,15 @@
+# core is clean, so all of its checks pass
+> core/unusedCompileDependenciesTest
+> core/undeclaredCompileDependenciesTest
+# tools sets libraryDependencies in the Test scope, where it has no effect, which fails its checks
+-> tools/unusedCompileDependenciesTest
+-> tools/undeclaredCompileDependenciesTest
+# the aggregate check fails because of tools, even though core is fine
+-> unusedCompileDependenciesAggregateTest
+# lenient does the same, but has opted out of failing on it
+> lenient/unusedCompileDependenciesTest
+> lenient/undeclaredCompileDependenciesTest
+# once tools opts out too, nothing is left to fail the aggregate check
+> set tools / strictDependencyScopes := false
+> tools/unusedCompileDependenciesTest
+> unusedCompileDependenciesAggregateTest
